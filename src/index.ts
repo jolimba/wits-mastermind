@@ -82,10 +82,10 @@ client.on("interactionCreate", async (interaction) => {
                 ephemeral: true
             });
         }
-        await createGithubIssue(thread);
+        const url: string = await createGithubIssue(thread);
         await interaction.reply({
-            content: "GitHub issue created successfully!",
-            ephemeral: true
+            content: "GitHub issue created successfully! Url: " + url,
+            ephemeral: false
         });
     } catch (error) {
         console.error(error);
@@ -129,7 +129,7 @@ async function registerCommands(): Promise<void> {
     }
 };
 
-async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChannel<boolean>): Promise<void> {
+async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChannel<boolean>): Promise<string> {
     let title: string = thread.name;
     const starterMessage: Message<true> | null = await thread.fetchStarterMessage();
     const parent = thread.parent;
@@ -169,4 +169,7 @@ async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChan
         const error = await response.text();
         throw new Error(error);
     }
+    const issue = await response.json();
+
+    return issue.html_url;
 }
