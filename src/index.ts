@@ -26,6 +26,8 @@ const GENERAL_NOTIFICATION_CHANNEL_ID = process.env.GENERAL_NOTIFICATION_CHANNEL
 const CLIENT_ID = process.env.CLIENT_ID!; //bot id
 const TOKEN = process.env.DISCORD_TOKEN!;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN!;
+const REPO = process.env.REPO!;
+const PROJECT = process.env.PROJECT!;
 
 const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[]= [
     new SlashCommandBuilder()
@@ -148,7 +150,7 @@ async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChan
         .join("\n\n");
     title = "[" + labels + "] " + title
     const response: Response = await fetch(
-        "https://api.github.com/repos/satoshimatos/project_anubis/issues",
+        "https://api.github.com/repos/" + REPO + "/" + PROJECT +"/issues",
         {
             method: "POST",
             headers: {
