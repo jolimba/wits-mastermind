@@ -7,9 +7,7 @@ import {
     SlashCommandBuilder,
     PrivateThreadChannel,
     PublicThreadChannel,
-    TextBasedChannel,
     ChannelType,
-    Events,
     GuildBasedChannel,
     GuildMember,
     Role,
@@ -17,8 +15,16 @@ import {
     Message
 } from "discord.js";
 import dotenv from "dotenv";
+import { promises as fs } from "fs";
 
 dotenv.config();
+
+interface Reminder {
+    channelId: string;
+    userId: string;
+    createdAt: number;
+    nextReminder: number;
+}
 
 const ROLE_ID = process.env.ROLE_ID!;
 const SERVER_ID = process.env.SERVER_ID!;
@@ -28,11 +34,22 @@ const TOKEN = process.env.DISCORD_TOKEN!;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN!;
 const REPO = process.env.REPO!;
 const PROJECT = process.env.PROJECT!;
+const REMINDER_CHANNEL_ID = process.env.REMINDER_CHANNEL_ID!;
+
+const REMINDERS_FILE = "./data/reminders.json";
 
 const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[]= [
     new SlashCommandBuilder()
         .setName("create_issue")
         .setDescription("Create an Github issue based on a forum's post.")
+        .toJSON(),
+    new SlashCommandBuilder()
+        .setName("remindme")
+        .setDescription("Set a reminder. In 24h Mastermind will tag you in some channel.")
+        .toJSON(),
+    new SlashCommandBuilder()
+        .setName("stop")
+        .setDescription("Stop the reminder.")
         .toJSON(),
 ];
 
@@ -45,9 +62,14 @@ const client: Client<boolean>= new Client({
 });
 
 client.once("ready", async () => {
+    await ensureReminderFile();
     console.log(`Bot logged in: ${client.user?.tag}`);
     await registerCommands();
     await syncMembersRole();
+    await checkReminders();
+    setInterval(async () => {
+        await checkReminders();
+    }, 1000);
 });
 
 client.on("guildMemberAdd", async(member) => {
@@ -66,35 +88,68 @@ client.on("guildMemberAdd", async(member) => {
 
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName !== "create_issue") return;
-    try {
-        if (!interaction.channel?.isThread()) {
-            return interaction.reply({
-                content: "This command can only be used inside a forum thread.",
-                ephemeral: true
-            });
-        }
-        const thread = interaction.channel;
-        const parent = thread.parent;
-        if (!parent || parent.type !== ChannelType.GuildForum) {
-            return interaction.reply({
-                content: "This command can only be used inside a forum post.",
-                ephemeral: true
-            });
-        }
-        const url: string = await createGithubIssue(thread);
-        await interaction.reply({
-            content: "GitHub issue created successfully! Url: " + url,
-            ephemeral: false
+    if (!interaction.channel) {
+        return interaction.reply({
+            content: "Could not determine the channel.",
+            ephemeral: true
         });
-    } catch (error) {
-        console.error(error);
-        if (!interaction.replied && !interaction.deferred) {
+    }
+    switch (interaction.commandName) {
+        case "create_issue":
+            try {
+                if (!interaction.channel?.isThread()) {
+                    return interaction.reply({
+                        content: "This command can only be used inside a forum thread.",
+                        ephemeral: true
+                    });
+                }
+                const thread = interaction.channel;
+                const parent = thread.parent;
+                if (!parent || parent.type !== ChannelType.GuildForum) {
+                    return interaction.reply({
+                        content: "This command can only be used inside a forum post.",
+                        ephemeral: true
+                    });
+                }
+                const url: string = await createGithubIssue(thread);
+                await interaction.reply({
+                    content: "GitHub issue created successfully! Url: " + url,
+                    ephemeral: false
+                });
+            } catch (error) {
+                console.error(error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({
+                        content: "Failed to create the GitHub issue.",
+                        ephemeral: true
+                    });
+                }
+            }
+            break;
+        case "remindme":
+            const success = await addReminder(
+                interaction.channel.id,
+                interaction.user.id
+            );
             await interaction.reply({
-                content: "Failed to create the GitHub issue.",
+                content: success
+                    ? "Reminder created successfully."
+                    : "You already have a reminder in this channel.",
                 ephemeral: true
             });
-        }
+            break;
+        case "stop":
+            const remove = await removeReminder(
+                interaction.channel.id,
+                interaction.user.id
+            );
+            await interaction.reply({
+                content: remove
+                    ? "Reminder removed."
+                    : "There is no reminder for you in this channel.",
+                ephemeral: true
+            });
+            break;
     }
 });
 
@@ -170,6 +225,94 @@ async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChan
         throw new Error(error);
     }
     const issue = await response.json();
-
     return issue.html_url;
+}
+
+async function ensureReminderFile(): Promise<void> {
+    try {
+        await fs.mkdir("./data", { recursive: true });
+
+        await fs.access(REMINDERS_FILE);
+    } catch {
+        await fs.writeFile(
+            REMINDERS_FILE,
+            JSON.stringify([], null, 4),
+            "utf8"
+        );
+    }
+}
+
+async function loadReminders(): Promise<Reminder[]> {
+    await ensureReminderFile();
+    const data = await fs.readFile(REMINDERS_FILE, "utf8");
+    return JSON.parse(data);
+}
+
+async function saveReminders(reminders: Reminder[]): Promise<void> {
+    await fs.writeFile(
+        REMINDERS_FILE,
+        JSON.stringify(reminders, null, 4)
+    );
+}
+
+async function addReminder(channelId: string, userId: string): Promise<boolean> {
+    const reminders = await loadReminders();
+    if (reminders.some(r =>
+        r.channelId === channelId &&
+        r.userId === userId
+    )) {
+        return false;
+    }
+    const now = Date.now();
+    reminders.push({
+        channelId,
+        userId,
+        createdAt: now,
+        nextReminder: now + 12 * 60 * 60 * 1000
+        // nextReminder: now + 10 * 1000
+    });
+    await saveReminders(reminders);
+    return true;
+}
+
+async function removeReminder(channelId: string, userId: string): Promise<boolean> {
+    const reminders = await loadReminders();
+    const filtered = reminders.filter(r =>
+        !(r.channelId === channelId &&
+          r.userId === userId)
+    );
+    if (filtered.length === reminders.length) {
+        return false;
+    }
+    await saveReminders(filtered);
+    return true;
+}
+
+async function checkReminders(): Promise<void> {
+    console.log("Checking...", Date.now());
+    const reminders = await loadReminders();
+    const now = Date.now();
+    let changed = false;
+    try {
+        const reminderChannel = await client.channels.fetch(REMINDER_CHANNEL_ID);
+        if (!reminderChannel?.isSendable()) {
+            console.error("Reminder channel not found or not sendable.");
+            return;
+        }
+        for (const reminder of reminders) {
+            if (reminder.nextReminder > now) {
+                continue;
+            }
+            await reminderChannel.send(
+                `<@${reminder.userId}> Don't forget to check <#${reminder.channelId}>`
+            );
+            reminder.nextReminder = Date.now() + 12 * 60 * 60 * 1000;
+            changed = true;
+        }
+        if (changed) {
+            await saveReminders(reminders);
+        }
+    } catch (err) {
+        console.error("Reminder error:", err);
+    }
 }
