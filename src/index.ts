@@ -38,6 +38,8 @@ const REMINDER_CHANNEL_ID = process.env.REMINDER_CHANNEL_ID!;
 
 const REMINDERS_FILE = "./data/reminders.json";
 
+const now = Date.now();
+
 const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[]= [
     new SlashCommandBuilder()
         .setName("create_issue")
@@ -263,12 +265,11 @@ async function addReminder(channelId: string, userId: string): Promise<boolean> 
     )) {
         return false;
     }
-    const now = Date.now();
     reminders.push({
         channelId,
         userId,
         createdAt: now,
-        nextReminder: now + 12 * 60 * 60 * 1000
+        nextReminder: 60 * 1000
         // nextReminder: now + 10 * 1000
     });
     await saveReminders(reminders);
@@ -289,9 +290,8 @@ async function removeReminder(channelId: string, userId: string): Promise<boolea
 }
 
 async function checkReminders(): Promise<void> {
-    console.log("Checking...", Date.now());
+    console.log("Checking...", now);
     const reminders = await loadReminders();
-    const now = Date.now();
     let changed = false;
     try {
         const reminderChannel = await client.channels.fetch(REMINDER_CHANNEL_ID);
@@ -306,7 +306,7 @@ async function checkReminders(): Promise<void> {
             await reminderChannel.send(
                 `<@${reminder.userId}> Don't forget to check <#${reminder.channelId}>`
             );
-            reminder.nextReminder = Date.now() + 12 * 60 * 60 * 1000;
+            reminder.nextReminder = 60 * 1000;
             changed = true;
         }
         if (changed) {
