@@ -57,7 +57,7 @@ export const addReminder = async (channelId: string, userId: string): Promise<bo
         channelId,
         userId,
         createdAt: now,
-        nextReminder: now + 60 * 1000
+        nextReminder: now + 6 * 60 * 60 * 1000
         // nextReminder: now + 10 * 1000
     });
     await saveReminders(reminders);
@@ -104,9 +104,9 @@ export const checkReminders = async (): Promise<void> => {
             }
 
             await reminderChannel.send(
-                `<@${reminder.userId}> Don't forget to check <#${reminder.channelId}>. If you don't need this remind anymore, please use /stop.`
+                `<@${reminder.userId}> Don't forget to check <#${reminder.channelId}>. If you don't need this remind anymore, please use /stop on <#${reminder.channelId}>.`
             );
-            reminder.nextReminder = now + 60 * 1000;
+            reminder.nextReminder = now + 6 * 60 * 60 * 1000;
             changed = true;
         }
         if (changed) {
