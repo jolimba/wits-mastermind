@@ -1,44 +1,33 @@
 import {
-    Client,
-    Collection,
-    GatewayIntentBits,
     REST,
     Routes,
     SlashCommandBuilder,
-    PrivateThreadChannel,
-    PublicThreadChannel,
     ChannelType,
     GuildBasedChannel,
-    GuildMember,
     Role,
+    GuildMember,
     RESTPostAPIChatInputApplicationCommandsJSONBody,
-    Message
 } from "discord.js";
 import dotenv from "dotenv";
 import { promises as fs } from "fs";
+import { syncMembersRole } from "./SyncMembers"
+import {
+    ensureReminderFile,
+    addReminder,
+    removeReminder,
+    checkReminders
+} from "./CreateReminders"
+import { createGithubIssue } from "./CreateIssue"
+import { client } from "./Client"
 
 dotenv.config();
-
-interface Reminder {
-    channelId: string;
-    userId: string;
-    createdAt: number;
-    nextReminder: number;
-}
 
 const ROLE_ID = process.env.ROLE_ID!;
 const SERVER_ID = process.env.SERVER_ID!;
 const GENERAL_NOTIFICATION_CHANNEL_ID = process.env.GENERAL_NOTIFICATION_CHANNEL_ID!;
 const CLIENT_ID = process.env.CLIENT_ID!; //bot id
 const TOKEN = process.env.DISCORD_TOKEN!;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN!;
-const REPO = process.env.REPO!;
-const PROJECT = process.env.PROJECT!;
-const REMINDER_CHANNEL_ID = process.env.REMINDER_CHANNEL_ID!;
-
-const REMINDERS_FILE = "./data/reminders.json";
-
-const now = Date.now();
+const ROLE_TEAM_MEMBER_ID = process.env.ROLE_TEAM_MEMBER_ID!;
 
 const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[]= [
     new SlashCommandBuilder()
@@ -47,21 +36,13 @@ const commands: RESTPostAPIChatInputApplicationCommandsJSONBody[]= [
         .toJSON(),
     new SlashCommandBuilder()
         .setName("remindme")
-        .setDescription("Set a reminder. In 24h Mastermind will tag you in some channel.")
+        .setDescription("Set a reminder. In 12h Mastermind will tag you in some channel.")
         .toJSON(),
     new SlashCommandBuilder()
         .setName("stop")
         .setDescription("Stop the reminder.")
         .toJSON(),
 ];
-
-const client: Client<boolean>= new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent
-    ]
-});
 
 client.once("ready", async () => {
     await ensureReminderFile();
@@ -93,6 +74,13 @@ client.on("interactionCreate", async (interaction) => {
     if (!interaction.channel) {
         return interaction.reply({
             content: "Could not determine the channel.",
+            ephemeral: true
+        });
+    }
+    const member = interaction.member as GuildMember;
+    if (!member.roles.cache.has(ROLE_TEAM_MEMBER_ID)) {
+        return interaction.reply({
+            content: "You don't have permission.",
             ephemeral: true
         });
     }
@@ -157,23 +145,6 @@ client.on("interactionCreate", async (interaction) => {
 
 client.login(TOKEN);
 
-async function syncMembersRole(): Promise<void> {
-    const guild = client.guilds.cache.get(SERVER_ID);
-
-    if (!guild) return;
-
-    const members: Collection<string, GuildMember> = await guild.members.fetch();
-
-    for (const member of members.values()) {
-        if (member.user.bot) continue;
-
-        if (!member.roles.cache.has(ROLE_ID)) {
-            await member.roles.add(ROLE_ID);
-        }
-    }
-    console.log('Done!')
-};
-
 async function registerCommands(): Promise<void> {
     const rest = new REST({ version: "10"}).setToken(TOKEN);
     try {
@@ -185,134 +156,3 @@ async function registerCommands(): Promise<void> {
         console.error(error);
     }
 };
-
-async function createGithubIssue(thread: PrivateThreadChannel | PublicThreadChannel<boolean>): Promise<string> {
-    let title: string = thread.name;
-    const starterMessage: Message<true> | null = await thread.fetchStarterMessage();
-    const parent = thread.parent;
-    if (!parent || parent.type !== ChannelType.GuildForum) {
-        throw new Error("Thread is not inside a forum.");
-    }
-    const labels: string[] = thread.appliedTags
-        .map(id => parent.availableTags.find(tag => tag.id === id)?.name)
-        .filter((name): name is string => name !== undefined);
-
-    const content = starterMessage?.content ?? "";
-    const attachments = starterMessage?.attachments
-        .map(attachment => `![](${attachment.url})`)
-        .join("\n") ?? "";
-
-    const body = [content, attachments]
-        .filter(part => part.length > 0)
-        .join("\n\n");
-    title = "[" + labels + "] " + title
-    const response: Response = await fetch(
-        "https://api.github.com/repos/" + REPO + "/" + PROJECT +"/issues",
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${GITHUB_TOKEN}`,
-                Accept: "application/vnd.github+json",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                title,
-                body,
-                labels
-            })
-        }
-    );
-    if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
-    }
-    const issue = await response.json();
-    return issue.html_url;
-}
-
-async function ensureReminderFile(): Promise<void> {
-    try {
-        await fs.mkdir("./data", { recursive: true });
-
-        await fs.access(REMINDERS_FILE);
-    } catch {
-        await fs.writeFile(
-            REMINDERS_FILE,
-            JSON.stringify([], null, 4),
-            "utf8"
-        );
-    }
-}
-
-async function loadReminders(): Promise<Reminder[]> {
-    await ensureReminderFile();
-    const data = await fs.readFile(REMINDERS_FILE, "utf8");
-    return JSON.parse(data);
-}
-
-async function saveReminders(reminders: Reminder[]): Promise<void> {
-    await fs.writeFile(
-        REMINDERS_FILE,
-        JSON.stringify(reminders, null, 4)
-    );
-}
-
-async function addReminder(channelId: string, userId: string): Promise<boolean> {
-    const reminders = await loadReminders();
-    if (reminders.some(r =>
-        r.channelId === channelId &&
-        r.userId === userId
-    )) {
-        return false;
-    }
-    reminders.push({
-        channelId,
-        userId,
-        createdAt: now,
-        nextReminder: 60 * 1000
-        // nextReminder: now + 10 * 1000
-    });
-    await saveReminders(reminders);
-    return true;
-}
-
-async function removeReminder(channelId: string, userId: string): Promise<boolean> {
-    const reminders = await loadReminders();
-    const filtered = reminders.filter(r =>
-        !(r.channelId === channelId &&
-          r.userId === userId)
-    );
-    if (filtered.length === reminders.length) {
-        return false;
-    }
-    await saveReminders(filtered);
-    return true;
-}
-
-async function checkReminders(): Promise<void> {
-    console.log("Checking...", now);
-    const reminders = await loadReminders();
-    let changed = false;
-    try {
-        const reminderChannel = await client.channels.fetch(REMINDER_CHANNEL_ID);
-        if (!reminderChannel?.isSendable()) {
-            console.error("Reminder channel not found or not sendable.");
-            return;
-        }
-        for (const reminder of reminders) {
-            if (reminder.nextReminder > now) {
-                continue;
-            }
-            await reminderChannel.send(
-                `<@${reminder.userId}> Don't forget to check <#${reminder.channelId}>`
-            );
-            reminder.nextReminder = 60 * 1000;
-            changed = true;
-        }
-        if (changed) {
-            await saveReminders(reminders);
-        }
-    } catch (err) {
-        console.error("Reminder error:", err);
-    }
-}
