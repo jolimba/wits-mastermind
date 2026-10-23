@@ -31,7 +31,7 @@ ROLE_TEAM_MEMBER_ID=
 GENERAL_NOTIFICATION_CHANNEL_ID=
 REMINDER_CHANNEL_ID=
 GENERAL_REMINDER_CHANNEL_ID=
-SATOSHI_ID=
+DISCORD_ADMIN_ID=
 GITHUB_TOKEN=
 REPO=
 PROJECT=
@@ -47,9 +47,9 @@ Set the values as follows:
 | `ROLE_ID` | Role assigned to existing and newly joined members. |
 | `ROLE_TEAM_MEMBER_ID` | Role required to use the bot's slash commands. |
 | `GENERAL_NOTIFICATION_CHANNEL_ID` | Text channel where new-member welcome messages are posted. |
-| `REMINDER_CHANNEL_ID` | Reminder destination used for the user configured by `SATOSHI_ID`. |
+| `REMINDER_CHANNEL_ID` | Reminder destination used for the user configured by `DISCORD_ADMIN_ID`. |
 | `GENERAL_REMINDER_CHANNEL_ID` | Reminder destination for other users. |
-| `SATOSHI_ID` | Discord user ID whose reminders are sent to `REMINDER_CHANNEL_ID`. |
+| `DISCORD_ADMIN_ID` | Discord user ID whose reminders are sent to `REMINDER_CHANNEL_ID`. |
 | `GITHUB_TOKEN` | GitHub token authorized to create issues in the target repository. |
 | `REPO` | GitHub repository owner or organization. |
 | `PROJECT` | GitHub repository name. |
