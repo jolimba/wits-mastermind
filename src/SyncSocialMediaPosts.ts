@@ -1,8 +1,11 @@
 import dotenv from "dotenv";
-
+import path from "node:path";
+import { StoredTokens } from "./interfaces/StoredTokensInterface";
+import { readFile } from "node:fs/promises";
 
 const TIKTOK_TOKEN = process.env.TIKTOK_TOKEN!;
 const TIKTOK_API_BASE = "https://open.tiktokapis.com/v2"!;
+const TOKEN_FILE = "../social-media-refreshable-tokens.json";
 
 export const is_token_expiring = async (): Promise<boolean> => {
     
@@ -22,4 +25,14 @@ export const is_token_expiring = async (): Promise<boolean> => {
         }
     )
     return false
+}
+
+export const readStoredTokens = async (): Promise<StoredTokens> => {
+    try {
+        const raw_data: string = await readFile(TOKEN_FILE, "utf8");
+        const tokens: StoredTokens = JSON.parse(raw_data) as StoredTokens;
+        return tokens
+    } catch (error) {
+        throw error;
+    }
 }
