@@ -1,15 +1,9 @@
 import dotenv from "dotenv";
 import { promises as fs } from "fs";
 import { client } from "./Client"
+import { Reminder } from "./interfaces/ReminderInterface"
 
 dotenv.config();
-
-interface Reminder {
-    channelId: string;
-    userId: string;
-    createdAt: number;
-    nextReminder: number;
-}
 
 const REMINDER_CHANNEL_ID = process.env.REMINDER_CHANNEL_ID!;
 const SATOSHI_ID = process.env.SATOSHI_ID!;

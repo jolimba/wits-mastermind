@@ -8,13 +8,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-interface Reminder {
-    channelId: string;
-    userId: string;
-    createdAt: number;
-    nextReminder: number;
-}
-
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN!;
 const REPO = process.env.REPO!;
 const PROJECT = process.env.PROJECT!;
